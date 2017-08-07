@@ -31,14 +31,13 @@ instance showBlock :: Show Block where
 instance showBlock' :: Show Block' where show x = genericShow x
 
 data Block = Block
-                    (Array Val -> Val) -- underlying function
-                    Type -- return type
-                    (Array Type) -- input types
+                (Array Val -> Val) -- underlying function
+                Type -- return type
+                (Array Type) -- input types
 
-data Block' = {-ValueBlock' Val
-              |-} Block'
-                    Block -- block itself
-                    (Array (Maybe Block')) -- blocks connected
+data Block' = Block'
+                Block -- block itself
+                (Array (Maybe Block')) -- blocks connected
 
 getBlock :: Block' -> Block
 getBlock (Block' block _) = block
@@ -110,7 +109,6 @@ getType Nil _ = Nothing
 getType (Cons x xs) (Block' _ connected) = getType xs =<< join (connected !! x)
 
 joinBlocks :: Block' -> Block'
---joinBlocks block'@(ValueBlock' _)       = block'
 joinBlocks block'@(Block' (Block fn ret ins) connected)
   | all isNothing connected = block'
   | otherwise = 
@@ -145,38 +143,3 @@ joinBlocks block'@(Block' (Block fn ret ins) connected)
 splitArgs :: forall a . List Int -> Array a -> List (Array a)
 splitArgs Nil xs = Nil
 splitArgs (s:ss) xs = take s xs : splitArgs ss (drop s xs)
-
--- extractInt :: Val -> Int
--- extractInt (IntVal int) = int
--- extractInt _ = unsafeCrashWith "Cannot extract a not-int"
-    
-{-
-data ValueBlock a = IntBlock Int
-data FunctionBlock a c = IdBlock (ValueBlock a)
-                       | FunctionBlock (ValueBlock a -> IdExistsBlock c)
-                               --| FunctionBlock (ValueBlock a -> FunctionBlock a a)
-
-oneIntFunctionBlock :: (Int -> Int) -> FunctionBlock Int Int
-oneIntFunctionBlock f = FunctionBlock (\(IntBlock a) -> IdExistsBlock (mkExists (Flip (?1))))
-
-intFunctionBlock :: forall a b. (Int -> FunctionBlock a b) -> FunctionBlock Int b
-intFunctionBlock f = FunctionBlock (\(IntBlock a) -> IdExistsBlock (mkExists (Flip (f a))))
-
-data Flip d a b = Flip (d b a)
-unflip (Flip x) = x
-
-data IdExistsBlock b = IdExistsBlock (Exists (Flip FunctionBlock b))
-
--- instance functorBlock :: Functor Block where
---     -- fmap :: (a->b) -> Block a -> Block b
---     fmap f (ValueBlock x)    = ValueBlock (f x)
---     fmap f (FunctionBlock x) = FunctionBlock (f x)
-
-intBlock :: Int -> ValueBlock Int
-intBlock int = IntBlock int
-
-addBlock :: FunctionBlock Int Int
-addBlock = intFunctionBlock (\a -> oneIntFunctionBlock (\b -> a+b))
---addBlock = FunctionBlock (\(IntBlock a) -> IdExistsBlock (mkExists (Flip (oneIntFunctionBlock (\b -> a+b)))))
--- addBlock = intFunctionBlock (\a -> oneIntFunctionBlock (\b -> a + b))
--}
