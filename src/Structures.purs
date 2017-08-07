@@ -11,6 +11,7 @@ import Data.List as List
 import Data.List.Types (List(..))
 import Data.Show
 import Data.Generic.Rep
+import Control.Bind
 import Data.Generic.Rep.Show
 import Data.Typeable
 import Data.Typelevel.Undefined
@@ -79,6 +80,34 @@ evaluate (block'@(Block' (Block fn ret ins) [])) = Just $ fn []
 evaluate (block'@(Block' (Block fn ret ins) connected))
   | all isJust connected = evaluate (joinBlocks block')
   | otherwise            = Nothing
+
+
+type Coords = List Int
+
+isFree :: Coords -> Block' -> Maybe Boolean
+isFree Nil _ = Nothing
+isFree (Cons x Nil) (Block' _ connected) =
+    do connectBlock <- connected !! x
+       pure $ isNothing connectBlock
+isFree (Cons x xs) (Block' _ connected) = isFree xs =<< join (connected !! x)
+    
+
+insertBlocks :: Coords -> Block' -> Maybe Block' -> Maybe Block'
+insertBlocks Nil newBlock mMainBlock = Just newBlock
+insertBlocks (Cons x xs) newBlock mMainBlock = 
+  do (Block' block connected) <- mMainBlock
+     connectBlock <- connected !! x
+     innerBlock <- insertBlocks xs newBlock connectBlock 
+     connected' <- updateAt x (Just innerBlock) connected
+     pure $ Block' block connected'
+
+getType :: Coords -> Block' -> Maybe Type
+getType (Cons x Nil) (Block' (Block _ _ types) connected) =
+    case connected !! x of
+        Nothing -> types !! x
+        (Just x) -> Nothing
+getType Nil _ = Nothing
+getType (Cons x xs) (Block' _ connected) = getType xs =<< join (connected !! x)
 
 joinBlocks :: Block' -> Block'
 --joinBlocks block'@(ValueBlock' _)       = block'
