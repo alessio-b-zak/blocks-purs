@@ -15,7 +15,9 @@
     "purescript-arrays": "^4.1.2",
     "purescript-typelevel": "^3.0.0",
     "purescript-generics-rep": "^5.1.0",
-    "purescript-tuples": "^4.1.0"
+    "purescript-folds": "*",
+    "purescript-tuples": "^4.1.0",
+    "purescript-halogen": "*"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"
