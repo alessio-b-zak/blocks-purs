@@ -84,6 +84,7 @@ td.empty.value {
 
 .block.dragged .input {
   height: 0px;
+  pointer-events: none;
 }
 
 .block.dragged .input::before {
