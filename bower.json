@@ -16,6 +16,7 @@
     "purescript-typelevel": "^3.0.0",
     "purescript-generics-rep": "^5.1.0",
     "purescript-folds": "*",
+    "purescript-monoid": "*",
     "purescript-tuples": "^4.1.0",
     "purescript-halogen": "*"
   },
