@@ -1,71 +1,8 @@
 <!doctype html>
 <html>
   <head>
-    <title>Blocks.hs</title>
-    <style>
-      body {
-        font-family: sans-serif;
-        max-width: 800px;
-        margin: auto;
-      }
-      
-      table {
-        margin: 20px;
-        border-spacing: 0;
-      }
-      
-      td {
-        border-left: 2px solid gray;
-        border-top: 2px solid;
-        border-bottom: none;
-        position: relative;
-        padding: 10px;
-      }
-      
-      td:not(.empty):not(.input):last-child {
-        border-right: 2px solid gray;
-      }
-      
-      td.int {
-        border-top-color: red;
-      }
-      
-      td:not(.empty)::before {
-        content: " ";
-        position: absolute;
-        display: block;
-        bottom: 100%;
-        left: 0;
-        right: 0;
-        width: 10px;
-        margin: auto;
-        border: 2px solid;
-        border-bottom-color: white !important;
-        background-color: white;
-        height: 5px;
-      }
-      
-      td.colour::before {
-        border-color: blue;
-        border-radius: 5px 5px 0 0;
-      }
-      
-      td.int::before {
-        border-color: red;
-      }
-      
-      td.colour {
-        border-top-color: blue;
-      }
-      
-      td.empty {
-        border: none;
-      }
-      
-      td.empty.value {
-        border-top: 2px solid gray;
-      }
-    </style>
+    <title>Blocks.purs</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
   </head>
   <body>
     <script src="example.js"></script>

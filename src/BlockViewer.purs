@@ -5,7 +5,8 @@ import Structures
 import Data.Maybe (Maybe(..), isJust, isNothing, fromMaybe)
 import Data.Tuple (Tuple(..))
 import Data.Foldable (foldr, all)
-import Data.Array (concatMap, zip)
+import Data.Array (concatMap, zip, filter, null)
+import Data.String as Str
 import Halogen as H
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
@@ -37,7 +38,7 @@ myBlockViewer =
   where
 
   initialState :: State
-  initialState = Just $ Block' addBlock [Just (intBlock' 1),Just (Block' addBlock [Just (intBlock' 1),Just (intBlock' 1)])]
+  initialState = Just $ Block' addBlock [Just (intBlock' 1),Just (Block' addBlock [Just (intBlock' 1),{-Just (intBlock' 1)-}Nothing])]
 
   render :: State -> H.ComponentHTML Query
   render structure =
@@ -45,7 +46,7 @@ myBlockViewer =
   
   structureRendering :: Maybe Block' -> Array (H.ComponentHTML Query)
   structureRendering (Just block'@(Block' (Block name fn output inputs) connected)) =
-    [ HH.table_ $ structureToTable [BlockView block']
+    [ HH.div [classes ["structureView"]] [ structureToDiv (BlockView block') ]
     ]
   --   [ HH.p_ [ HH.text (name <> " " <> foldr (<>) "" (map (\input -> show input <> " -> ") inputs) <> show output) ]
   --   , HH.h2_ [ HH.text ("width = " <> show (getHeight $ Just block')) ]
@@ -55,18 +56,14 @@ myBlockViewer =
     [ HH.p_ [ HH.text ("Nothing") ]
     ]
   
-  structureToTable :: Array (BlockView) -> Array (H.ComponentHTML Query)
-  structureToTable [] = []
-  structureToTable mElems =
-    [ HH.tr_ $ map (structureToCell) mElems
-    ] <> structureToTable (getNextRow mElems)
-  
-  structureToCell :: BlockView -> H.ComponentHTML Query
-  structureToCell VoidBlock = HH.td [classes ["empty"]] [ ]
-  structureToCell (InputBlock typ) = HH.td [classes ["input", toClass typ]] [ ]
-  structureToCell (BlockView block'@(Block' (Block name fn out ins) connected)) =
-    HH.td [HP.colSpan (getHeight $ Just block'), classes [toClass out]]
-      [ HH.text (name <> " :: " <> foldr (<>) "" (map (\input -> show input <> " -> ") ins) <> show out)
+  structureToDiv :: BlockView -> H.ComponentHTML Query
+  structureToDiv VoidBlock = HH.div [classes ["void"]] []
+  structureToDiv (InputBlock typ) = HH.div [classes ["input", toClass typ]] []
+  structureToDiv blockView@(BlockView (Block' (Block name fn out ins) connected)) =
+    HH.div [ HP.draggable true, classes ["block", toClass out, "void" `if_` null connected] ]
+      [ HH.div [classes ["block-text"]]
+        [ HH.text (name <> " \x2237 " <> foldr (<>) "" (map (\input -> show input <> " \x2192 ") ins) <> show out) ]
+      , HH.div [classes ["block-inputs"]] $ map structureToDiv (getConnected blockView)
       ]
   
   getConnected :: BlockView -> Array BlockView
@@ -79,21 +76,15 @@ myBlockViewer =
   maybeToBlockView (Tuple typ Nothing) = InputBlock typ
   maybeToBlockView (Tuple typ (Just block')) = BlockView block'
   
-  getNextRow :: Array BlockView -> Array BlockView
-  getNextRow mElems
-    | all (not <<< isBlockView) mElems = []
-    | otherwise = concatMap getConnected mElems
-  
-  isBlockView :: BlockView -> Boolean
-  isBlockView (BlockView _) = true
-  isBlockView _ = false
-  
   classes :: forall r i . Array String -> HP.IProp ("class" :: String | r) i
-  classes = HP.classes <<< map HCore.ClassName
+  classes = HP.classes <<< map HCore.ClassName <<< filter (not <<< Str.null)
   
   toClass :: Type -> String
   toClass IntType = "int"
   toClass ColourType = "colour"
+  
+  if_ :: String -> Boolean -> String
+  if_ x bool = if bool then x else ""
 
   eval :: Query ~> H.ComponentDSL State Query Message m
   eval = case _ of

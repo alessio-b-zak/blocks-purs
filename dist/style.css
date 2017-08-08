@@ -1,0 +1,137 @@
+body {
+  font-family: sans-serif;
+  max-width: 800px;
+  margin: auto;
+}
+
+table {
+  margin: 20px;
+  border-spacing: 0;
+}
+
+/*td {
+  border-left: 2px solid gray;
+  border-top: 2px solid;
+  border-bottom: none;
+  position: relative;
+  padding: 10px;
+}
+
+td:not(.empty):not(.input) {
+  background-color: white;
+}
+
+td:not(.empty):not(.input):last-child {
+  border-right: 2px solid gray;
+}
+
+td.int {
+  border-top-color: red;
+}
+
+td:not(.empty)::before {
+  content: " ";
+  position: absolute;
+  display: block;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  width: 10px;
+  margin: auto;
+  border: 2px solid;
+  border-bottom-color: white !important;
+  background-color: white;
+  height: 5px;
+}
+
+td.colour::before {
+  border-color: blue;
+  border-radius: 5px 5px 0 0;
+}
+
+td.int::before {
+  border-color: red;
+}
+
+td.colour {
+  border-top-color: blue;
+}
+
+td.empty {
+  border: none;
+}
+
+td.empty.value {
+  border-top: 2px solid gray;
+}*/
+
+.structureView {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: nowrap;
+}
+
+.structureView > .block > * {
+  margin: 0;
+}
+
+.block {
+  flex-basis: 100%;
+  position: relative;
+  border-top: 2px solid;
+  align-self: flex-start;
+}
+
+.block-text {
+  background-color: white;
+  text-align: center;
+  padding: 10px;
+  min-height: 22px;
+  border-left: 2px solid gray;
+  border-right: 2px solid gray;
+  margin: 0 5px;
+}
+
+.block.void > .block-text {
+  border-bottom: 2px solid gray;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.block-inputs {
+  display: flex;
+  flex-wrap: nowrap;
+  margin: 0 5px;
+}
+
+.input {
+  flex-basis: 100%;
+  position: relative;
+  border-top: 2px solid;
+  align-self: flex-start;
+}
+
+.block.int,
+.input.int {
+  border-top-color: red;
+}
+
+.block.colour,
+.input.colour {
+  border-top-color: blue;
+}
+
+.block.int::before,
+.input.int::before {
+  content: ' ';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 5px;
+  width: 10px;
+  margin: 0 auto;
+  background-color: white;
+  border: 2px solid red;
+  border-bottom: 2px solid white;
+}
