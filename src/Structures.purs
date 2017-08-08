@@ -80,6 +80,31 @@ addBlock = Block "(+)" f IntType [IntType, IntType]
     f [IntVal a, IntVal b] = IntVal $ a + b
     f _ = unsafeCrashWith "Adding wrong things"
 
+newBlock' :: Block -> Block'
+newBlock' block@(Block _ _ _ inputTypes) =
+    Block' block (replicate (length inputTypes) Nothing)
+
+getBlueBlock :: Block
+getBlueBlock = Block "Get Blue" f IntType [ColourType]
+  where 
+    f :: Array Val -> Val
+    f [ColourVal a] = IntVal $ get3 a
+    f _ = unsafeCrashWith "Not getting blue from a colour"
+
+getGreenBlock :: Block
+getGreenBlock = Block "Get Green" f IntType [ColourType]
+  where 
+    f :: Array Val -> Val
+    f [ColourVal a] = IntVal $ get2 a
+    f _ = unsafeCrashWith "Not getting green from a colour"
+
+getRedBlock :: Block
+getRedBlock = Block "Get Red" f IntType [ColourType]
+  where 
+    f :: Array Val -> Val
+    f [ColourVal a] = IntVal $ get1 a
+    f _ = unsafeCrashWith "Not getting red from a colour"
+
 evaluate :: Block' -> Maybe Val
 evaluate (block'@(Block' (Block name fn ret ins) [])) = Just $ fn []
 evaluate (block'@(Block' (Block name fn ret ins) connected))
