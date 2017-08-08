@@ -2,18 +2,19 @@ module BlockViewer where
 
 import Prelude
 import Structures
-import Data.Maybe (Maybe(..), isJust, isNothing, fromMaybe, maybe)
+import Data.Maybe (Maybe(..), isJust, fromMaybe, maybe)
 import Data.Monoid (class Monoid, mempty)
 import Data.Tuple (Tuple(..))
-import Data.Foldable (foldr, all)
-import Data.Array ((..),concatMap, zip, filter, null, zipWith, length, reverse, snoc, toUnfoldable)
+import Data.Foldable (foldr)
+import Data.Array (filter, length, null, snoc, toUnfoldable, zip, zipWith, (..))
 import Debug.Trace
 import Data.String as Str
+import Control.MonadZero (guard)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Eff.Console
 import DOM (DOM)
 import DOM.HTML.Event.Types (DragEvent, dragEventToEvent)
-import DOM.Event.Event (stopPropagation)
+import DOM.Event.Event (stopPropagation, preventDefault)
 import Halogen as H
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
@@ -30,8 +31,10 @@ data BlockView = BlockView (Array Int) Block' | InputBlock (Array Int) Type
 data Query a
   = IsEmpty (Boolean -> a)
   | Remove (Array Int) a
-  | StartDrag (Array Int) DragEvent a
-  | Clear a
+  | Drag (Array Int) DragEvent a
+  | Drop (Array Int) a
+  | DragEnd a
+  | PreventDefault DragEvent a
   -- | Increase a
   -- | GetVal (Int -> a)
 
@@ -60,29 +63,36 @@ myBlockViewer =
   render state =
     HH.div_ $
       [ HH.div_ [HH.text $ maybe "" show evaluated ] ]
-      <> structureRendering structure
+      <> structureRendering state
     where
-      structure = state.structure
       evaluated :: Maybe Val
-      evaluated = evaluate =<< structure
+      evaluated = evaluate =<< state.structure
   
-  structureRendering :: Maybe Block' -> Array (H.ComponentHTML Query)
-  structureRendering (Just block'@(Block' (Block name fn output inputs) connected)) =
-    [ HH.div [classes ["structureView"]] [ structureToDiv (BlockView [] block') ]
-    ]
-  structureRendering Nothing =
-    [ HH.p_ [ HH.text ("Nothing") ]
-    ]
+  structureRendering :: State -> Array (H.ComponentHTML Query)
+  structureRendering state = case state.structure of
+    Nothing ->
+      [ HH.p_ [ HH.text ("Nothing") ]
+      ]
+    Just block' ->
+      [ HH.div [ HE.onDragEnd (HE.input_ DragEnd), classes ["structureView"]] [ structureToDiv state (BlockView [] block') ]
+      ]
   
-  structureToDiv :: BlockView -> H.ComponentHTML Query
-  structureToDiv (InputBlock loc typ) = HH.div [classes ["input", toClass typ]] []
-  structureToDiv blockView@(BlockView loc (Block' (Block name fn out ins) connected)) =
-    HH.div [ HP.draggable true, classes ["block", toClass out, "void" `if_` null connected], HE.onDragStart (HE.input (StartDrag loc)) ]
+  structureToDiv :: State -> BlockView -> H.ComponentHTML Query
+  structureToDiv _ (InputBlock loc typ) =
+    HH.div  [ classes ["input", toClass typ]
+            , HE.onDragOver (HE.input PreventDefault)
+            , HE.onDrop (HE.input_ (Drop loc))
+            ] []
+  structureToDiv state blockView@(BlockView loc (Block' (Block name fn out ins) connected)) =
+    HH.div  [ HP.draggable true,
+              classes ["block", toClass out, "void" `if_` null connected, "dragged" `if_` (state.dragSource == Just loc)],
+              HE.onDragStart (HE.input (Drag loc))
+            ]
       (
         [ HH.div [HE.onClick (HE.input_ (Remove loc)), classes ["block-text"]]
           [ HH.text (name <> " \x2237 " <> foldr (<>) "" (map (\input -> show input <> " \x2192 ") ins) <> show out) ]
         ]
-        <> [ HH.div [classes ["block-inputs"]] $ map structureToDiv (getConnected blockView)] `if_` not (null connected)
+        <> [ HH.div [classes ["block-inputs"]] $ map (structureToDiv state) (getConnected blockView)] `if_` not (null connected)
       )
   
   getConnected :: BlockView -> Array BlockView
@@ -107,31 +117,38 @@ myBlockViewer =
 
   eval :: Query ~> H.ComponentDSL State Query Message (Aff (dom :: DOM | eff))
   eval = case _ of
-    -- Negate next -> do
-    --   state <- H.get
-    --   let nextState = - state
-    --   H.put nextState
-    --   H.raise $ Changed nextState
-    --   pure next
-    -- Increase next -> do
-    --   state <- H.get
-    --   let nextState = state + 1
-    --   H.put nextState
-    --   H.raise $ Changed nextState
-    --   pure next
     Remove loc reply -> do
       state <- H.get
       let nextState = state { structure = removeBlock (toUnfoldable loc) state.structure }
       H.put nextState
       pure reply
-    StartDrag loc ev reply -> do
+    Drag loc ev reply -> do
       state <- H.get
       H.liftEff $ stopPropagation (dragEventToEvent ev)
-      let nextState = state { dragSource = Just (trace (show loc) (const loc)) }
+      let nextState = state { dragSource = Just loc }
       H.put nextState
       pure reply
-    Clear reply -> do
-      H.put {structure: Nothing, dragSource: Nothing}
+    DragEnd reply -> do
+      state <- H.get
+      let nextState = state { dragSource = Nothing }
+      H.put nextState
+      pure reply
+    PreventDefault ev reply -> do
+      H.liftEff $ preventDefault (dragEventToEvent ev)
+      pure reply
+    Drop loc reply -> do
+      state <- H.get
+      let structure' = fromMaybe state.structure $ do
+            source <- toUnfoldable <$> state.dragSource
+            structure <- state.structure
+            movedBlock <- findBlock source state.structure
+            let srcType = getRet movedBlock
+            let dest = toUnfoldable loc
+            destType <- getType dest =<< state.structure
+            guard $ srcType == destType
+            pure (insertBlock dest movedBlock $ removeBlock source (Just structure))
+      
+      H.put {structure: structure', dragSource: Nothing}
       pure reply
     IsEmpty reply -> do
       state <- H.get

@@ -1,21 +1,17 @@
 module Structures where
 
 import Prelude
-import Data.Exists
-import Data.Maybe
-import Partial.Unsafe (unsafeCrashWith)
-import Data.Foldable (foldr,sum)
+import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing)
+import Data.Foldable (sum)
 import Data.Array hiding ((:))
 import Data.List ((:))
 import Data.List as List
 import Data.List.Types (List(..))
-import Data.Show
-import Data.Generic.Rep
-import Control.Bind
-import Data.Generic.Rep.Show
-import Data.Typeable
-import Data.Typelevel.Undefined
-import Data.Tuple.Nested
+import Data.Generic.Rep (class Generic)
+import Data.Generic.Rep.Eq (genericEq)
+import Data.Generic.Rep.Show (genericShow)
+import Data.Tuple.Nested (Tuple3, get1, get2, get3)
+import Partial.Unsafe (unsafeCrashWith)
 
 type Colour = Tuple3 Int Int Int
 data Type = IntType | ColourType
@@ -25,6 +21,7 @@ derive instance genericType :: Generic Type _
 derive instance genericVal :: Generic Val _
 derive instance genericBlock' :: Generic Block' _
 instance showType :: Show Type where show x = genericShow x
+instance eqType :: Eq Type where eq x y = genericEq x y
 instance showVal :: Show Val where show x = genericShow x
 instance showBlock :: Show Block where
     show (Block name f typ types) = "Block { " <> name <> " :: " <> show types <> " -> " <> show typ <> " }"
@@ -117,9 +114,17 @@ type Coords = List Int
 isFree :: Coords -> Block' -> Maybe Boolean
 isFree Nil _ = Nothing
 isFree (Cons x Nil) (Block' _ connected) =
-    do connectBlock <- connected !! x
-       pure $ isNothing connectBlock
+    do connectedBlock <- connected !! x
+       pure $ isNothing connectedBlock
 isFree (Cons x xs) (Block' _ connected) = isFree xs =<< join (connected !! x)
+
+findBlock :: Coords -> Maybe Block' -> Maybe Block'
+findBlock Nil mBlock = mBlock
+findBlock (Cons x xs) mBlock =
+  do
+    (Block' block connected) <- mBlock
+    connectedBlock <- connected !! x
+    findBlock xs $ connectedBlock
 
 removeBlock :: Coords -> Maybe Block' -> Maybe Block'
 removeBlock coords mMainBlock = updateBlock coords Nothing mMainBlock
@@ -131,16 +136,13 @@ updateBlock :: Coords -> Maybe Block' -> Maybe Block' -> Maybe Block'
 updateBlock Nil newBlock mMainBlock = newBlock
 updateBlock (Cons x xs) newBlock mMainBlock = 
   do (Block' block connected) <- mMainBlock
-     connectBlock <- connected !! x
-     let innerBlock = updateBlock xs newBlock connectBlock 
+     connectedBlock <- connected !! x
+     let innerBlock = updateBlock xs newBlock connectedBlock 
      connected' <- updateAt x innerBlock connected
      pure $ Block' block connected'
 
 getType :: Coords -> Block' -> Maybe Type
-getType (Cons x Nil) (Block' (Block _ _ _ types) connected) =
-    case connected !! x of
-        Nothing -> types !! x
-        (Just x) -> Nothing
+getType (Cons x Nil) (Block' (Block _ _ _ types) _) = types !! x
 getType Nil _ = Nothing
 getType (Cons x xs) (Block' _ connected) = getType xs =<< join (connected !! x)
 
@@ -155,7 +157,7 @@ joinBlocks name' block'@(Block' (Block name fn output inputs) connected)
         connected' = zipWith fillBlanks inputs connectedTemp
           where
             fillBlanks :: Type -> Maybe Block' -> Block'
-            fillBlanks inputType block' = fromMaybe (idBlock' inputType) block'
+            fillBlanks inputType b' = fromMaybe (idBlock' inputType) b'
         
         inputs' = concatMap getBlockTypes connected'
         splits = toUnfoldable $ map (length <<< getBlockTypes) connected'
