@@ -120,15 +120,20 @@ isFree (Cons x Nil) (Block' _ connected) =
     do connectBlock <- connected !! x
        pure $ isNothing connectBlock
 isFree (Cons x xs) (Block' _ connected) = isFree xs =<< join (connected !! x)
-    
 
-insertBlocks :: Coords -> Block' -> Maybe Block' -> Maybe Block'
-insertBlocks Nil newBlock mMainBlock = Just newBlock
-insertBlocks (Cons x xs) newBlock mMainBlock = 
+removeBlock :: Coords -> Maybe Block' -> Maybe Block'
+removeBlock coords mMainBlock = updateBlock coords Nothing mMainBlock
+
+insertBlock :: Coords -> Block' -> Maybe Block' -> Maybe Block'
+insertBlock coords newBlock mMainBlock = updateBlock coords (Just newBlock) mMainBlock
+
+updateBlock :: Coords -> Maybe Block' -> Maybe Block' -> Maybe Block'
+updateBlock Nil newBlock mMainBlock = newBlock
+updateBlock (Cons x xs) newBlock mMainBlock = 
   do (Block' block connected) <- mMainBlock
      connectBlock <- connected !! x
-     innerBlock <- insertBlocks xs newBlock connectBlock 
-     connected' <- updateAt x (Just innerBlock) connected
+     let innerBlock = updateBlock xs newBlock connectBlock 
+     connected' <- updateAt x innerBlock connected
      pure $ Block' block connected'
 
 getType :: Coords -> Block' -> Maybe Type

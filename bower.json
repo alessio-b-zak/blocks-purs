@@ -18,7 +18,8 @@
     "purescript-folds": "*",
     "purescript-monoid": "*",
     "purescript-tuples": "^4.1.0",
-    "purescript-halogen": "*"
+    "purescript-halogen": "*",
+    "purescript-debug": "*"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"
