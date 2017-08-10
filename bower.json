@@ -19,7 +19,11 @@
     "purescript-monoid": "*",
     "purescript-tuples": "^4.1.0",
     "purescript-halogen": "*",
-    "purescript-debug": "*"
+    "purescript-debug": "*",
+    "purescript-colors": "*",
+    "purescript-halogen-css": "*",
+    "purescript-read": "*",
+    "purescript-css": "*"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"

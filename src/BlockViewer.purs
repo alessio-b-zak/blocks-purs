@@ -1,25 +1,40 @@
 module BlockViewer where
 
-import Prelude
 import Structures
+import Helpers
+
+import Prelude
+import Data.Int (toNumber, hexadecimal, fromStringAs, fromString)
 import Data.Maybe (Maybe(..), isJust, fromMaybe, maybe)
 import Data.Monoid (class Monoid, mempty)
 import Data.Tuple (Tuple(..))
 import Data.Foldable (foldr)
+import Data.Traversable (traverse_)
 import Data.Array (filter, length, null, snoc, toUnfoldable, zip, zipWith, (..))
-import Debug.Trace
 import Data.String as Str
 import Control.MonadZero (guard)
 import Control.Monad.Aff (Aff)
+import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console
+import Partial.Unsafe (unsafeCrashWith)
+import Debug.Trace
+
 import DOM (DOM)
+import DOM.Event.Types (Event, MouseEvent, FocusEvent, mouseEventToEvent, focusEventToEvent)
 import DOM.HTML.Event.Types (DragEvent, dragEventToEvent)
 import DOM.Event.Event (stopPropagation, preventDefault)
+import DOM.HTML.Indexed.StepValue (StepValue(..))
+import DOM.HTML.Indexed.InputType (InputType(InputNumber, InputColor))
 import Halogen as H
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.HTML.Core as HCore
+import Halogen.HTML.CSS (style)
+import CSS.Stylesheet (CSS)
+import CSS.Background (backgroundColor)
+import CSS.Flexbox (flexGrow)
+import Color as Color
 
 type State = {
   structure :: Maybe Block',
@@ -34,14 +49,11 @@ data Query a
   | Drag (Array Int) DragEvent a
   | Drop (Array Int) a
   | DragEnd a
-  | PreventDefault DragEvent a
-  -- | Increase a
-  -- | GetVal (Int -> a)
-
-data Message
-  = New Block'
-  | Updated Block'
-  | Removed
+  | DragOver DragEvent a
+  | ChangeVal (Array Int) Event a
+  | ResetVal (Array Int) FocusEvent a
+  | Join a
+  | StopPropagation MouseEvent a
 
 myBlockViewer :: forall eff. H.Component HH.HTML Query Unit Message (Aff (dom :: DOM | eff))
 myBlockViewer =
@@ -55,45 +67,84 @@ myBlockViewer =
 
   initialState :: State
   initialState = {
-    structure: Just $ Block' addBlock [Just (intBlock' 1),Just (Block' addBlock [Just (intBlock' 1),{-Just (intBlock' 1)-}Nothing])],
+    structure: Just $ Block' addBlock
+                    [Just (valBlock' 1),Just (Block' addBlock [Just (valBlock' 1), Just (Block' redBlock [Just $ colourBlock' 127 0 255])])],
     dragSource: Nothing
   }
   
   render :: State -> H.ComponentHTML Query
   render state =
-    HH.div_ $
-      [ HH.div_ [HH.text $ maybe "" show evaluated ] ]
-      <> structureRendering state
+    HH.div [classes ["viewer"]]
+    [ HH.div [classes ["result"]] [HH.text $ maybe "" show evaluated]
+    , structureRendering state
+    ]
     where
-      evaluated :: Maybe Val
       evaluated = evaluate =<< state.structure
   
-  structureRendering :: State -> Array (H.ComponentHTML Query)
+  structureRendering :: State -> H.ComponentHTML Query
   structureRendering state = case state.structure of
-    Nothing ->
-      [ HH.p_ [ HH.text ("Nothing") ]
-      ]
+    Nothing -> HH.p_ [ HH.text ("Nothing") ]
     Just block' ->
-      [ HH.div [ HE.onDragEnd (HE.input_ DragEnd), classes ["structureView"]] [ structureToDiv state (BlockView [] block') ]
-      ]
+      HH.div
+          [ HE.onDragEnd (HE.input_ DragEnd)
+          , classes ["structureView"]
+          , HE.onDoubleClick (HE.input_ Join)
+          ]
+        [ structureToDiv state (BlockView [] block') ]
   
   structureToDiv :: State -> BlockView -> H.ComponentHTML Query
   structureToDiv _ (InputBlock loc typ) =
-    HH.div  [ classes ["input", toClass typ]
-            , HE.onDragOver (HE.input PreventDefault)
+    HH.div  [ classes ["input", show typ]
+            , HE.onDragOver (HE.input DragOver)
             , HE.onDrop (HE.input_ (Drop loc))
             ] []
-  structureToDiv state blockView@(BlockView loc (Block' (Block name fn out ins) connected)) =
-    HH.div  [ HP.draggable true,
-              classes ["block", toClass out, "void" `if_` null connected, "dragged" `if_` (state.dragSource == Just loc)],
-              HE.onDragStart (HE.input (Drag loc))
+  structureToDiv state blockView@(BlockView loc block'@(Block' block@(Block _ _ out _) connected)) =
+    HH.div  [ HP.draggable true
+            , classes ["block", show out, "void" `if_` null connected, "dragged" `if_` (state.dragSource == Just loc)]
+            , HE.onDragStart (HE.input (Drag loc))
+            , style $ flexGrow $ getWidth $ Just block'
             ]
       (
-        [ HH.div [HE.onClick (HE.input_ (Remove loc)), classes ["block-text"]]
-          [ HH.text (name <> " \x2237 " <> foldr (<>) "" (map (\input -> show input <> " \x2192 ") ins) <> show out) ]
+        maybe [] preview evaluated
+        <> [ HH.div [HE.onClick (HE.input_ (Remove loc)), classes ["block-text"]]
+          (blockToBody loc block)
         ]
         <> [ HH.div [classes ["block-inputs"]] $ map (structureToDiv state) (getConnected blockView)] `if_` not (null connected)
       )
+    where
+      evaluated = evaluate block'
+  
+  preview :: Val -> Array (H.ComponentHTML Query)
+  preview (ColourVal colour) = [ HH.div [ classes [ "Colour", "preview" ], style $ backgroundColor $ rgb colour ] []  ]
+  preview (IntVal int) = [ HH.div [ classes [ "Int", "preview" ] ] [ HH.text $ show int ] ]
+  
+  blockToBody :: Array Int -> Block -> Array (H.ComponentHTML Query)
+  blockToBody loc block@(Block name fn out ins) =
+    (if null ins then createInput loc block else [])
+    <> [ HH.text ((name `if_` not (null ins)) <> " \x2237 " <> foldr (<>) "" (map (\input -> show input <> " \x2192 ") ins) <> show out) ]
+  
+  createInput :: Array Int -> Block -> Array (H.ComponentHTML Query)
+  createInput loc (Block _ fn typ _) =
+    [ HH.input $
+      [ HE.onClick (HE.input StopPropagation)
+      , HE.onInput (HE.input $ ChangeVal loc)
+      , HE.onBlur (HE.input $ ResetVal loc) 
+      ] <> case typ of
+            IntType ->
+              [ HP.type_ InputNumber
+              , HP.prop (HCore.PropName "size") 5
+              , HP.step (Step $ toNumber 1)
+              , HP.value (toString (fn []))
+              ]
+            ColourType ->
+              [ HP.type_ InputColor
+              , HP.value (toString (fn []))
+              ]
+    ]
+  
+  toString :: Val -> String
+  toString (IntVal i) = show i
+  toString (ColourVal c) = colourToHex c
   
   getConnected :: BlockView -> Array BlockView
   getConnected (InputBlock loc _) = []
@@ -104,13 +155,6 @@ myBlockViewer =
   maybeToBlockView :: Array Int -> Int -> (Tuple Type (Maybe Block')) -> BlockView
   maybeToBlockView loc i (Tuple typ Nothing) = InputBlock (loc `snoc` i) typ
   maybeToBlockView loc i (Tuple typ (Just block')) = BlockView (loc `snoc` i) block'
-  
-  classes :: forall r i . Array String -> HP.IProp ("class" :: String | r) i
-  classes = HP.classes <<< map HCore.ClassName <<< filter (not <<< Str.null)
-  
-  toClass :: Type -> String
-  toClass IntType = "int"
-  toClass ColourType = "colour"
   
   if_ :: forall a . Monoid a => a -> Boolean -> a
   if_ x bool = if bool then x else mempty
@@ -125,16 +169,25 @@ myBlockViewer =
     Drag loc ev reply -> do
       state <- H.get
       H.liftEff $ stopPropagation (dragEventToEvent ev)
+      draggingInput <- H.liftEff $ isInput ev
+      when (draggingInput) $ H.liftEff $ preventDefault (dragEventToEvent ev)
+      H.liftEff $ setEffectAllowed "move" ev
+      H.raise SetDrag
       let nextState = state { dragSource = Just loc }
       H.put nextState
+      pure reply
+    StopPropagation ev reply -> do
+      H.liftEff $ stopPropagation (mouseEventToEvent ev)
       pure reply
     DragEnd reply -> do
       state <- H.get
       let nextState = state { dragSource = Nothing }
+      H.raise StopDrag
       H.put nextState
       pure reply
-    PreventDefault ev reply -> do
+    DragOver ev reply -> do
       H.liftEff $ preventDefault (dragEventToEvent ev)
+      H.liftEff $ setDropEffect "move" ev
       pure reply
     Drop loc reply -> do
       state <- H.get
@@ -150,6 +203,47 @@ myBlockViewer =
       
       H.put {structure: structure', dragSource: Nothing}
       pure reply
+    ChangeVal loc ev reply -> do
+      state <- H.get
+      string <- H.liftEff $ inputValue ev
+      traceShowA string
+      let structure' = fromMaybe state.structure $ do
+            let locList = toUnfoldable loc
+            valType <- getType locList =<< state.structure
+            val <- parseBlock valType string
+            pure $ insertBlock locList val state.structure
+      H.put $ state {structure = structure'}
+      pure reply
+    ResetVal loc ev reply -> do
+      state <- H.get
+      traverse_ (H.liftEff <<< setValue (focusEventToEvent ev)) $ toString <$> (evaluate =<< blockAt (toUnfoldable loc) =<< state.structure)
+      pure reply
+    Join reply -> do
+      state <- H.get
+      let structure' = joinBlocks "newBlock" <$> state.structure
+      H.put $ state {structure = structure'}
+      pure reply
     IsEmpty reply -> do
       state <- H.get
       pure (reply (isJust state.structure))
+
+rgb :: Colour -> Color.Color
+rgb (Colour r g b) = Color.rgb r g b
+
+parseBlock :: Type -> String -> Maybe Block'
+parseBlock IntType str = valBlock' <$> fromString str
+parseBlock ColourType str = do
+  {after: rgb} <- Str.splitAt 1 str
+  guard $ Str.length rgb == 6
+  {before :r', after: gb} <- Str.splitAt 2 rgb
+  {before :g', after: b'} <- Str.splitAt 2 gb
+  r <- fromStringAs hexadecimal r'
+  g <- fromStringAs hexadecimal g'
+  b <- fromStringAs hexadecimal b'
+  pure $ valBlock' $ Colour r g b
+
+foreign import setEffectAllowed :: forall eff. String -> DragEvent -> Eff (dom :: DOM | eff) Unit
+foreign import setDropEffect :: forall eff. String -> DragEvent -> Eff (dom :: DOM | eff) Unit
+foreign import isInput :: forall eff. DragEvent -> Eff (dom :: DOM | eff) Boolean
+foreign import inputValue :: forall eff. Event -> Eff (dom :: DOM | eff) String
+foreign import setValue :: forall eff. Event -> String -> Eff (dom :: DOM | eff) Unit

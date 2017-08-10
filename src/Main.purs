@@ -4,9 +4,9 @@ import Prelude
 import Control.Monad.Eff (Eff)
 import Halogen.Aff as HA
 import Halogen.VDom.Driver (runUI)
-import BlockViewer as BV
+import Blocks as Blocks
 
 main :: Eff (HA.HalogenEffects ()) Unit
 main = HA.runHalogenAff do
   body <- HA.awaitBody
-  runUI BV.myBlockViewer unit body
+  runUI Blocks.blocksApp unit body
