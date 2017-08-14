@@ -123,6 +123,13 @@ redBlock = Block "red" f IntType [ColourType]
     f [ColourVal a] = IntVal $ red a
     f _ = unsafeCrashWith "Not getting red from a colour"
 
+rgbBlock :: Block
+rgbBlock = Block "rgb" f ColourType [IntType, IntType, IntType]
+  where
+    f :: Array Val -> Val
+    f [IntVal r, IntVal g, IntVal b] = ColourVal $ Colour r g b
+    f _ = unsafeCrashWith "Not got enough colours"
+
 evaluate :: Block' -> Maybe Val
 evaluate (block'@(Block' (Block name fn ret ins) [])) = Just $ fn []
 evaluate (block'@(Block' (Block name fn ret ins) connected))

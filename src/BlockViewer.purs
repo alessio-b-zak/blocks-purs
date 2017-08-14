@@ -5,13 +5,14 @@ import Helpers
 
 import Prelude
 import Data.Int (toNumber, hexadecimal, fromStringAs, fromString)
-import Data.Maybe (Maybe(..), isJust, fromMaybe, maybe)
+import Data.Maybe (Maybe(..), isJust, isNothing, fromMaybe, maybe)
 import Data.Monoid (class Monoid, mempty)
 import Data.Tuple (Tuple(..))
 import Data.Foldable (foldr)
 import Data.Traversable (traverse_)
 import Data.Array (filter, length, null, snoc, toUnfoldable, zip, zipWith, (..))
 import Data.String as Str
+import Control.Alt ((<|>))
 import Control.MonadZero (guard)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Eff (Eff)
@@ -38,7 +39,8 @@ import Color as Color
 
 type State = {
   structure :: Maybe Block',
-  dragSource :: Maybe (Array Int)
+  dragSource :: Maybe (Array Int),
+  dragTarget :: Maybe (Array Int)
 }
 
 data BlockView = BlockView (Array Int) Block' | InputBlock (Array Int) Type
@@ -48,6 +50,11 @@ data Query a
   | Remove (Array Int) a
   | Drag (Array Int) DragEvent a
   | Drop (Array Int) a
+  | DropIfBlank a
+  | DragOverIfBlank DragEvent a
+  | DropBlock Block' (Boolean -> a)
+  | RemoveDragged (Unit -> a)
+  | GetDragged (Maybe Block' -> a)
   | DragEnd a
   | DragOver DragEvent a
   | ChangeVal (Array Int) Event a
@@ -69,12 +76,13 @@ myBlockViewer =
   initialState = {
     structure: Just $ Block' addBlock
                     [Just (valBlock' 1),Just (Block' addBlock [Just (valBlock' 1), Just (Block' redBlock [Just $ colourBlock' 127 0 255])])],
-    dragSource: Nothing
+    dragSource: Nothing,
+    dragTarget: Nothing
   }
   
   render :: State -> H.ComponentHTML Query
   render state =
-    HH.div [classes ["viewer"]]
+    HH.div [classes ["viewer"], HE.onDrop (HE.input_ DropIfBlank), HE.onDragOver (HE.input DragOverIfBlank)]
     [ HH.div [classes ["result"]] [HH.text $ maybe "" show evaluated]
     , structureRendering state
     ]
@@ -121,7 +129,7 @@ myBlockViewer =
   blockToBody :: Array Int -> Block -> Array (H.ComponentHTML Query)
   blockToBody loc block@(Block name fn out ins) =
     (if null ins then createInput loc block else [])
-    <> [ HH.text ((name `if_` not (null ins)) <> " \x2237 " <> foldr (<>) "" (map (\input -> show input <> " \x2192 ") ins) <> show out) ]
+    <> [ HH.text ((name `if_` not (null ins)) <> typeSignature block) ]
   
   createInput :: Array Int -> Block -> Array (H.ComponentHTML Query)
   createInput loc (Block _ fn typ _) =
@@ -172,9 +180,9 @@ myBlockViewer =
       draggingInput <- H.liftEff $ isInput ev
       when (draggingInput) $ H.liftEff $ preventDefault (dragEventToEvent ev)
       H.liftEff $ setEffectAllowed "move" ev
-      H.raise SetDrag
       let nextState = state { dragSource = Just loc }
       H.put nextState
+      H.raise SetDrag
       pure reply
     StopPropagation ev reply -> do
       H.liftEff $ stopPropagation (mouseEventToEvent ev)
@@ -189,29 +197,55 @@ myBlockViewer =
       H.liftEff $ preventDefault (dragEventToEvent ev)
       H.liftEff $ setDropEffect "move" ev
       pure reply
+    DragOverIfBlank ev reply -> do
+      state <- H.get
+      when (isNothing state.structure) do
+        H.liftEff $ preventDefault (dragEventToEvent ev)
+        H.liftEff $ setDropEffect "move" ev
+      pure reply
     Drop loc reply -> do
       state <- H.get
-      let structure' = fromMaybe state.structure $ do
-            source <- toUnfoldable <$> state.dragSource
-            structure <- state.structure
-            movedBlock <- findBlock source state.structure
-            let srcType = getRet movedBlock
-            let dest = toUnfoldable loc
-            destType <- getType dest =<< state.structure
-            guard $ srcType == destType
-            pure (insertBlock dest movedBlock $ removeBlock source (Just structure))
-      
-      H.put {structure: structure', dragSource: Nothing}
+      H.put $ state {dragTarget = Just loc}
+      H.raise $ HandleDrop
       pure reply
+    DropIfBlank reply -> do
+      state <- H.get
+      when (isNothing state.structure) (H.raise HandleDrop)
+      pure reply
+    RemoveDragged reply -> do
+      state <- H.get
+      let structure' = do
+            source <- toUnfoldable <$> state.dragSource
+            removeBlock source state.structure
+      H.put $ state {structure = structure', dragSource = Nothing}
+      pure $ reply unit
+    GetDragged reply -> do
+      state <- H.get
+      pure $ reply do
+        source <- toUnfoldable <$> state.dragSource
+        structure <- state.structure
+        blockAt source structure
+    DropBlock block' reply -> do
+      state <- H.get
+      let structure' = do
+            structure <- state.structure
+            let srcType = getRet block'
+            dest <- toUnfoldable <$> state.dragTarget
+            destType <- getType dest structure
+            guard $ srcType == destType
+            insertBlock dest block' $ Just structure
+      
+      H.put $ state {structure = structure' <|> state.structure <|> Just block', dragTarget = Nothing}
+      pure $ reply $ isJust structure' || isNothing state.structure
     ChangeVal loc ev reply -> do
       state <- H.get
       string <- H.liftEff $ inputValue ev
       traceShowA string
-      let structure' = fromMaybe state.structure $ do
+      let structure' = do
             let locList = toUnfoldable loc
             valType <- getType locList =<< state.structure
             val <- parseBlock valType string
-            pure $ insertBlock locList val state.structure
+            insertBlock locList val state.structure
       H.put $ state {structure = structure'}
       pure reply
     ResetVal loc ev reply -> do
@@ -241,9 +275,3 @@ parseBlock ColourType str = do
   g <- fromStringAs hexadecimal g'
   b <- fromStringAs hexadecimal b'
   pure $ valBlock' $ Colour r g b
-
-foreign import setEffectAllowed :: forall eff. String -> DragEvent -> Eff (dom :: DOM | eff) Unit
-foreign import setDropEffect :: forall eff. String -> DragEvent -> Eff (dom :: DOM | eff) Unit
-foreign import isInput :: forall eff. DragEvent -> Eff (dom :: DOM | eff) Boolean
-foreign import inputValue :: forall eff. Event -> Eff (dom :: DOM | eff) String
-foreign import setValue :: forall eff. Event -> String -> Eff (dom :: DOM | eff) Unit
